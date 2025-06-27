@@ -6,9 +6,8 @@ import {
   EditOutlined,
   BarChartOutlined,
 } from "@ant-design/icons";
-import { Area } from "@ant-design/plots";
 import { useEffect, useState } from "react";
-import axios from "axios";
+import { getDashboardSummary, onDataChange, DashboardSummary } from "../utils/dataManager";
 
 const statMeta = [
   {
@@ -59,14 +58,28 @@ interface DashboardPageProps {
 }
 
 export default function DashboardPage({ onCardClick }: DashboardPageProps) {
-  const [summary, setSummary] = useState<any>(null);
+  const [summary, setSummary] = useState<DashboardSummary | null>(null);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    axios.get("http://localhost:8000/dashboard/summary").then(res => {
-      setSummary(res.data);
+  const loadData = () => {
+    // 模拟加载延迟，然后获取真实数据
+    setTimeout(() => {
+      const data = getDashboardSummary();
+      setSummary(data);
       setLoading(false);
+    }, 300);
+  };
+
+  useEffect(() => {
+    loadData();
+    
+    // 监听数据变化，实时更新仪表盘
+    const unsubscribe = onDataChange(() => {
+      const data = getDashboardSummary();
+      setSummary(data);
     });
+
+    return unsubscribe;
   }, []);
 
   return (
@@ -74,24 +87,52 @@ export default function DashboardPage({ onCardClick }: DashboardPageProps) {
       <h2 style={{ fontWeight: 600, fontSize: 22, marginBottom: 24 }}>仪表盘</h2>
       <Row gutter={24}>
         {statMeta.map((item, idx) => {
-          const value = summary?.[item.percentKey] ?? 0;
-          const trend = summary?.[item.trendKey] ?? [];
-          const areaData = trend.map((y: number, i: number) => ({ x: i + 1, y }));
-          const areaConfig = {
-            data: areaData,
-            xField: 'x',
-            yField: 'y',
-            height: 32,
-            smooth: true,
-            color: item.trendColor,
-            areaStyle: { fill: item.trendColor, opacity: 0.15 },
-            line: { color: item.trendColor, size: 2 },
-            xAxis: { visible: false },
-            yAxis: { visible: false },
-            legend: false,
-            tooltip: false,
-            animation: true,
-            padding: [0, 0, 0, 0],
+          const value = summary ? (summary as any)[item.percentKey] ?? 0 : 0;
+          const trend = summary ? (summary as any)[item.trendKey] ?? [] : [];
+          // 创建简单的SVG趋势图
+          const createTrendChart = (data: number[], color: string) => {
+            if (!data || data.length === 0) return null;
+            
+            const width = 200;
+            const height = 32;
+            const padding = 4;
+            const maxValue = Math.max(...data);
+            const minValue = Math.min(...data);
+            const range = maxValue - minValue || 1;
+            
+            // 生成路径点
+            const points = data.map((value, index) => {
+              const x = padding + (index / (data.length - 1)) * (width - 2 * padding);
+              const y = height - padding - ((value - minValue) / range) * (height - 2 * padding);
+              return `${x},${y}`;
+            }).join(' ');
+            
+            // 生成面积路径
+            const areaPath = `M ${padding},${height - padding} L ${points.split(' ').map(p => p).join(' L ')} L ${width - padding},${height - padding} Z`;
+            
+            return (
+              <svg width={width} height={height} style={{ display: 'block' }}>
+                <defs>
+                  <linearGradient id={`gradient-${item.key}`} x1="0%" y1="0%" x2="0%" y2="100%">
+                    <stop offset="0%" stopColor={color} stopOpacity="0.3" />
+                    <stop offset="100%" stopColor={color} stopOpacity="0.05" />
+                  </linearGradient>
+                </defs>
+                <path
+                  d={areaPath}
+                  fill={`url(#gradient-${item.key})`}
+                  stroke="none"
+                />
+                <polyline
+                  points={points}
+                  fill="none"
+                  stroke={color}
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            );
           };
           // 卡片可点击，鼠标悬停高亮
           return (
@@ -135,7 +176,15 @@ export default function DashboardPage({ onCardClick }: DashboardPageProps) {
                   </div>
                 </div>
                 <div style={{ marginTop: 16 }}>
-                  {loading ? <Skeleton.Input active size="small" style={{ width: '100%' }} /> : <Area {...areaConfig} />}
+                  {loading ? (
+                    <Skeleton.Input active size="small" style={{ width: '100%' }} />
+                  ) : trend && trend.length > 0 ? (
+                    createTrendChart(trend, item.trendColor)
+                  ) : (
+                    <div style={{ height: 32, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#ccc', fontSize: 12 }}>
+                      暂无趋势数据
+                    </div>
+                  )}
                 </div>
               </Card>
             </Col>

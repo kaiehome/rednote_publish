@@ -1,5 +1,5 @@
 "use client";
-import { Layout, Menu, theme } from "antd";
+import { Layout, Menu, theme, Spin } from "antd";
 import {
   DashboardOutlined,
   UserOutlined,
@@ -10,6 +10,7 @@ import {
 import React, { useState } from "react";
 import dynamic from "next/dynamic";
 import DashboardPage from "./components/DashboardPage";
+import ClientOnly from "./components/ClientOnly";
 
 const AccountPage = dynamic(() => import("./components/AccountPage"));
 const ContentPage = dynamic(() => import("./components/ContentPage"));
@@ -26,7 +27,7 @@ const menuItems = [
   { key: "settings", icon: <SettingOutlined />, label: "系统设置" },
 ];
 
-export default function Home() {
+function MainApp() {
   const [collapsed, setCollapsed] = useState(false);
   const [selectedKey, setSelectedKey] = useState("dashboard");
   const {
@@ -77,5 +78,24 @@ export default function Home() {
         </Content>
       </Layout>
     </Layout>
+  );
+}
+
+export default function Home() {
+  return (
+    <ClientOnly fallback={
+      <div style={{ 
+        display: 'flex', 
+        justifyContent: 'center', 
+        alignItems: 'center', 
+        height: '100vh',
+        fontSize: '18px'
+      }}>
+        <Spin size="large" />
+        <span style={{ marginLeft: 16 }}>加载中...</span>
+      </div>
+    }>
+      <MainApp />
+    </ClientOnly>
   );
 }

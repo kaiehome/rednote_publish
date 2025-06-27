@@ -1,13 +1,7 @@
 "use client";
 import { useState, useRef, useEffect } from "react";
 import { Table, Button, Modal, Form, Input, Select, Popconfirm, Tag, message, Space } from "antd";
-
-interface AccountData {
-  key: string;
-  name: string;
-  status: string;
-  created: string;
-}
+import { getAccountData, saveAccountData, AccountData } from "../utils/dataManager";
 
 const initialData: AccountData[] = [
   { key: "1", name: "账号A", status: "正常", created: "2024-06-25" },
@@ -22,13 +16,10 @@ const statusOptions = [
 ];
 
 export default function AccountPage() {
-  // 从 localStorage 加载数据，如果没有则使用初始数据
+  // 从数据管理器加载数据，如果没有则使用初始数据
   const [data, setData] = useState<AccountData[]>(() => {
-    if (typeof window !== 'undefined') {
-      const savedData = localStorage.getItem('accountData');
-      return savedData ? JSON.parse(savedData) : initialData;
-    }
-    return initialData;
+    const savedData = getAccountData();
+    return savedData.length > 0 ? savedData : initialData;
   });
   const [search, setSearch] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
@@ -39,11 +30,9 @@ export default function AccountPage() {
   const [selectedRowKeys, setSelectedRowKeys] = useState<string[]>([]);
   const tableRef = useRef<any>(null);
 
-  // 保存数据到 localStorage
+  // 保存数据到数据管理器
   const saveDataToStorage = (newData: AccountData[]) => {
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('accountData', JSON.stringify(newData));
-    }
+    saveAccountData(newData);
   };
 
   // 重置数据到初始状态
@@ -87,40 +76,37 @@ export default function AccountPage() {
   // 保存账号
   const handleSave = () => {
     form.validateFields().then((values) => {
-      setLoadingKey("save");
       // 模拟接口失败场景
       if (values.name === "fail") {
-        setTimeout(() => {
-          setLoadingKey("");
-          message.error("保存失败：模拟接口错误");
-        }, 600);
+        message.error("保存失败：模拟接口错误");
         return;
       }
-      setTimeout(() => {
-        let newData: AccountData[];
-        if (editing) {
-          newData = data.map((item) =>
-            item.key === editing.key ? { ...item, ...values } : item
-          );
-          setData(newData);
-          saveDataToStorage(newData);
-          setHighlightKey(editing.key);
-          message.success("账号已更新");
-        } else {
-          const newKey = Date.now().toString();
-          newData = [
-            ...data,
-            { ...values, key: newKey, created: new Date().toISOString().slice(0, 10) },
-          ];
-          setData(newData);
-          saveDataToStorage(newData);
-          setHighlightKey(newKey);
-          message.success("账号已添加");
-        }
-        setModalOpen(false);
-        setEditing(null);
-        setLoadingKey("");
-      }, 600);
+      
+      let newData: AccountData[];
+      if (editing) {
+        newData = data.map((item) =>
+          item.key === editing.key ? { ...item, ...values } : item
+        );
+        setData(newData);
+        saveDataToStorage(newData);
+        setHighlightKey(editing.key);
+        message.success("账号已更新");
+      } else {
+        const newKey = Date.now().toString();
+        newData = [
+          ...data,
+          { ...values, key: newKey, created: new Date().toISOString().slice(0, 10) },
+        ];
+        setData(newData);
+        saveDataToStorage(newData);
+        setHighlightKey(newKey);
+        message.success("账号已添加");
+      }
+      
+      // 立即关闭弹窗
+      setModalOpen(false);
+      setEditing(null);
+      form.resetFields();
     });
   };
 
@@ -199,27 +185,45 @@ export default function AccountPage() {
       key: "action",
       render: (_: any, record: AccountData) => (
         <Space split={<span>|</span>}>
-          <Button size="small" onClick={() => openModal(record)} loading={loadingKey === "save" && editing?.key === record.key}>
-            编辑
-          </Button>
           <Popconfirm
             title="确定要删除该账号吗？"
             onConfirm={() => handleDelete(record.key)}
-            okButtonProps={{ loading: loadingKey === record.key }}
-            okText="确定"
+            okButtonProps={{ 
+              disabled: loadingKey === record.key,
+              style: {
+                width: '60px',
+                opacity: loadingKey === record.key ? 0.6 : 1,
+                transition: 'opacity 0.3s'
+              }
+            }}
+            okText={loadingKey === record.key ? "删除中..." : "确定"}
             cancelText="取消"
           >
-            <Button size="small" danger loading={loadingKey === record.key}>
-              删除
+            <Button 
+              size="small" 
+              danger 
+              disabled={loadingKey === record.key}
+              style={{ 
+                width: '48px', 
+                opacity: loadingKey === record.key ? 0.6 : 1,
+                transition: 'opacity 0.3s'
+              }}
+            >
+              {loadingKey === record.key ? '...' : '删除'}
             </Button>
           </Popconfirm>
           <Select
             size="small"
             value={record.status}
-            style={{ width: 80 }}
+            style={{ 
+              width: 80,
+              opacity: loadingKey === record.key + "-status" ? 0.6 : 1,
+              transition: 'opacity 0.3s'
+            }}
             onChange={(val) => handleStatusChange(record.key, val)}
             options={statusOptions}
-            loading={loadingKey === record.key + "-status"}
+            disabled={loadingKey === record.key + "-status"}
+            placeholder={loadingKey === record.key + "-status" ? "更新中..." : undefined}
           />
         </Space>
       ),
@@ -247,18 +251,29 @@ export default function AccountPage() {
           <Popconfirm
             title={`确定要删除选中的${selectedRowKeys.length}个账号吗？`}
             onConfirm={handleBatchDelete}
-            okButtonProps={{ loading: loadingKey === "batch-delete" }}
+            okButtonProps={{ 
+              disabled: loadingKey === "batch-delete",
+              style: {
+                width: '80px',
+                opacity: loadingKey === "batch-delete" ? 0.6 : 1,
+                transition: 'opacity 0.3s'
+              }
+            }}
             disabled={selectedRowKeys.length === 0}
-            okText="确定"
+            okText={loadingKey === "batch-delete" ? "删除中..." : "确定"}
             cancelText="取消"
           >
             <Button
               danger
-              style={{ marginLeft: 8 }}
-              disabled={selectedRowKeys.length === 0}
-              loading={loadingKey === "batch-delete"}
+              style={{ 
+                marginLeft: 8,
+                width: '80px',
+                opacity: loadingKey === "batch-delete" ? 0.6 : 1,
+                transition: 'opacity 0.3s'
+              }}
+              disabled={selectedRowKeys.length === 0 || loadingKey === "batch-delete"}
             >
-              批量删除
+              {loadingKey === "batch-delete" ? '删除中...' : '批量删除'}
             </Button>
           </Popconfirm>
           <Button
@@ -268,6 +283,9 @@ export default function AccountPage() {
             重置数据
           </Button>
         </div>
+      </div>
+      <div style={{ marginBottom: 8, color: '#666', fontSize: 12 }}>
+        💡 提示：双击表格行可以编辑账号信息
       </div>
       <Table
         dataSource={filteredData}
@@ -279,20 +297,20 @@ export default function AccountPage() {
         onRow={record => ({
           onMouseEnter: e => e.currentTarget.style.background = "#f5faff",
           onMouseLeave: e => e.currentTarget.style.background = record.key === highlightKey ? "#e6f7ff" : "",
+          onDoubleClick: () => openModal(record),
+          style: { cursor: 'pointer' }
         })}
         rowSelection={rowSelection}
       />
       <Modal
         title={editing ? "编辑账号" : "添加账号"}
         open={modalOpen}
-        onCancel={() => { setModalOpen(false); setEditing(null); }}
+        onCancel={() => { setModalOpen(false); setEditing(null); form.resetFields(); }}
         onOk={handleSave}
-        destroyOnHidden
-        confirmLoading={loadingKey === "save"}
         okText="确定"
         cancelText="取消"
       >
-        <Form form={form} layout="vertical" preserve={false} onFinish={handleSave}>
+        <Form form={form} layout="vertical" onFinish={handleSave}>
           <Form.Item
             name="name"
             label="账号名称"
@@ -316,6 +334,16 @@ export default function AccountPage() {
         .highlight-row {
           background: #e6f7ff !important;
           transition: background 0.5s;
+        }
+        
+        /* 优化按钮加载状态 */
+        .ant-btn:disabled {
+          cursor: not-allowed;
+        }
+        
+        /* 优化下拉框加载状态 */
+        .ant-select-disabled .ant-select-selector {
+          cursor: not-allowed;
         }
       `}</style>
     </div>
